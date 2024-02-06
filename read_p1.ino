@@ -91,12 +91,7 @@ bool decodeTelegram(int len) {
     messageCRC[4] = 0;  // * Thanks to HarmOtten (issue 5)
     validCRCFound = (strtol(messageCRC, NULL, 16) == currentCRC);
 
-#ifdef DEBUG
-    if (validCRCFound)
-      Serial.println(F("CRC Valid!"));
-    else
-      Serial.println(F("CRC Invalid!"));
-#endif
+    debug(validCRCFound ? "CRC valid!" : "CRC Invalid!");
     currentCRC = 0;
   } else {
     currentCRC = crc16(currentCRC, (unsigned char *)telegram, len);
@@ -114,9 +109,7 @@ bool decodeTelegram(int len) {
         telegramObjects[i].value = newValue;
         telegramObjects[i].sendData = true;
       }
-#ifdef DEBUG
-      Serial.println((String) "Found a Telegram object: " + telegramObjects[i].name + " value: " + telegramObjects[i].value);
-#endif
+      debug((String) "Found a Telegram object: " + telegramObjects[i].name + " value: " + telegramObjects[i].value);
       break;
     }
   }
@@ -126,10 +119,7 @@ bool decodeTelegram(int len) {
 
 bool readP1Serial() {
   if (Serial2.available()) {
-#ifdef DEBUG
-    Serial.println("Serial2 is available");
-    Serial.println("Memset telegram");
-#endif
+    debug("Serial2 is available. Memset telegram.");
     memset(telegram, 0, sizeof(telegram));
     while (Serial2.available()) {
       // Reads the telegram until it finds a return character

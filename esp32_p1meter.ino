@@ -26,6 +26,11 @@ void setup() {
   digitalWrite(LED_PIN, LOW);
   blinkLed(1, 500);
 
+  // Force CPU frequency if constant is specified
+  if (CPU_FREQ > 0) {
+    setCpuFrequencyMhz(CPU_FREQ);
+  }
+
   Serial.begin(BAUD_RATE);
 
 #ifdef DEBUG

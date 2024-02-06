@@ -1,3 +1,12 @@
+#ifdef __cplusplus
+  extern "C" {
+#endif
+    uint8_t temprature_sens_read();
+#ifdef __cplusplus
+}
+#endif
+uint8_t temprature_sens_read();
+
 void blinkLed(int numberOfBlinks, int msBetweenBlinks) {
   int msDurationForLow=200;
   for (int i = 0; i < numberOfBlinks; i++) {
@@ -66,7 +75,13 @@ void sendEmailMessage(String subject, String message) {
 
 void debug(String msg) {
 #ifdef DEBUG
+  unsigned int _temp = (temprature_sens_read() - 32) / 1.8;
+  msg += " (T: " + String(_temp) + "C)";
   Serial.println(msg);
+
+  #ifdef MQTT_DEBUGGING;
+    sendMQTTMessage(MQTT_DEBUG_TOPIC, msg.c_str());
+  #endif
 
   #ifdef EMAIL_DEBUGGING
     emailMessageDump += msg + "\r\n";

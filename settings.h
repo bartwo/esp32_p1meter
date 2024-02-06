@@ -2,13 +2,15 @@
 //#define DEBUG
 // Uncomment for debug messages sent to gmail
 //#define EMAIL_DEBUGGING
+// Uncomment for debug messages sent to mqtt
+//#define MQTT_DEBUGGING
 // Uncomment for testing
 //#define TEST
 
 // Update treshold in milliseconds, messages will only be sent on this interval
 //#define UPDATE_INTERVAL 1000 // 1 second
-#define UPDATE_INTERVAL 30000 // 30 seconds
-//#define UPDATE_INTERVAL 60000  // 1 minute
+//#define UPDATE_INTERVAL 30000 // 30 seconds
+#define UPDATE_INTERVAL 60000  // 1 minute
 //#define UPDATE_INTERVAL 300000 // 5 minutes
 
 // Update treshold in milliseconds,
@@ -32,13 +34,12 @@
 
 #define P1_MAXLINELENGTH 1050
 
-// To calculate this use https://arduinojson.org/v6/assistant/
-// This is for 84 readouts with some slack
-#define DYNAMIC_JSON_DOCUMENT_SIZE 12288
-
 #define MQTT_MAX_RECONNECT_TRIES 10
 #define MQTT_ROOT_TOPIC "p1_meter/sensor"
 #define MQTT_STATUS_TOPIC "p1_meter/status"
+#ifdef MQTT_DEBUGGING
+#define MQTT_DEBUG_TOPIC "p1_meter/debug"
+#endif
 
 #define WIFI_MAX_RECONNECT_TRIES 5
 
@@ -62,6 +63,11 @@ long VALUE_NUMERIC_MULTIPLIER = 1;
 // Decimal places for float values, by default it's 2
 // Integers are handled automatically and no decimals are used
 unsigned short VALUE_FLOAT_DECIMAL_PLACES = 3;
+
+// Specify CPU frequenxy in MHz to reduce power usage
+// 0, if frequency should be handled automatically using ArduinoIDE and board settings
+// CAUTION: please make sure your CPU can handle frequency!
+unsigned int CPU_FREQ = 80;
 
 // Nothing to change below - globals to make it all work as simple as possible
 char telegram[P1_MAXLINELENGTH];

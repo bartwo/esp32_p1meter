@@ -5,11 +5,11 @@
     and converts to telegramDecodedObjects MQTT vector.
 */
 void setupDataReadout() {
-  DynamicJsonDocument _dsmrMapDocument(DYNAMIC_JSON_DOCUMENT_SIZE);
+  JsonDocument _dsmrMapDocument;
   DeserializationError _error = deserializeJson(_dsmrMapDocument, DSMR_MAP);
   if (_error) {
-    Serial.print("deserializeJson() failed: ");
-    Serial.println(_error.c_str());
+    debug("deserializeJson() failed: ");
+    debug(_error.c_str());
     return;
   }
 
@@ -24,9 +24,9 @@ void setupDataReadout() {
   }
 
 #ifdef DEBUG
-  Serial.println("MQTT Topics initialized (" + String(_count) + "):");
+  debug("MQTT Topics initialized (" + String(_count) + "):");
   for (int i = 0; i < _count; i++) {
-    Serial.println(String(MQTT_ROOT_TOPIC) + "/" + telegramObjects[i].name);
+    debug(String(MQTT_ROOT_TOPIC) + "/" + telegramObjects[i].name);
   }
 #endif
 }
