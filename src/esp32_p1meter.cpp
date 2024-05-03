@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <ArduinoOTA.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
@@ -6,6 +7,16 @@
 
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
+
+void setupDataReadout();
+void setupOTA();
+void blinkLed(int numberOfBlinks, int msBetweenBlinks);
+bool mqttReconnect();
+void sendMQTTMessage();
+void sendMetric(const String &name, long metric);
+bool readP1Serial();
+unsigned int crc16(unsigned int crc, unsigned char *buf, int len);
+void sendDataToBroker();
 
 /***********************************
             Main Setup
@@ -38,7 +49,6 @@ void setup()
     delay(3000);
     setupDataReadout();
     setupOTA();
-
     mqttClient.setServer(MQTT_HOST, atoi(MQTT_PORT));
     blinkLed(5, 500); // Blink 5 times to indicate end of setup
 #ifdef DEBUG
@@ -294,4 +304,255 @@ void setupOTA()
         });
 
     ArduinoOTA.begin();
+}
+
+
+void sendMQTTMessage(const char *topic, const char *payload) // Fixed: payload should be const char *
+    {
+        bool result = mqttClient.publish(topic, payload, false);
+    }
+
+bool mqttReconnect()
+{
+    int MQTT_RECONNECT_RETRIES = 0;
+
+    while (!mqttClient.connected() && MQTT_RECONNECT_RETRIES < MQTT_MAX_RECONNECT_TRIES)
+    {
+        MQTT_RECONNECT_RETRIES++;
+
+        if (mqttClient.connect(HOSTNAME, MQTT_USER, MQTT_PASS))
+        {
+            char message[16 + strlen(HOSTNAME) + 1]; // Fixed: dynamic memory allocation is unnecessary
+            strcpy(message, "p1 meter alive: ");
+            strcat(message, HOSTNAME);
+            mqttClient.publish("hass/status", message);
+        }
+        else
+        {
+            delay(5000);
+        }
+    }
+
+    if (MQTT_RECONNECT_RETRIES >= MQTT_MAX_RECONNECT_TRIES)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+void sendMetric(const String &name, long metric) // Fixed: name passed by reference
+{
+    // if (metric > 0)
+    // {
+    char output[10];
+    ltoa(metric, output, sizeof(output));
+
+    String topic = String(MQTT_ROOT_TOPIC) + "/" + name;
+#ifdef DEBUG
+    Serial.println(topic);
+#endif
+    sendMQTTMessage(topic.c_str(), output);
+    // }
+}
+
+void sendDataToBroker()
+{
+    for (int i = 0; i < NUMBER_OF_READOUTS; i++)
+    {
+#ifdef DEBUG
+        Serial.println("Sending: " + telegramObjects[i].name + " value: " + String(telegramObjects[i].value));
+#endif
+        if (telegramObjects[i].sendData)
+        {
+            sendMetric(telegramObjects[i].name, telegramObjects[i].value);
+            telegramObjects[i].sendData = false;
+        }
+    }
+}
+
+void blinkLed(int numberOfBlinks, int msBetweenBlinks)
+{
+  for (int i = 0; i < numberOfBlinks; i++)
+  {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(msBetweenBlinks);
+    digitalWrite(LED_BUILTIN, LOW);
+    if (i != numberOfBlinks - 1)
+    {
+      delay(msBetweenBlinks);
+    }
+  }
+}
+
+unsigned int crc16(unsigned int crc, unsigned char *buf, int len)
+{
+    for (int pos = 0; pos < len; pos++)
+    {
+        crc ^= (unsigned int)buf[pos];
+
+        for (int i = 8; i != 0; i--)
+        {
+            if ((crc & 0x0001) != 0)
+            {
+                crc >>= 1;
+                crc ^= 0xA001;
+            }
+            else
+            {
+                crc >>= 1;
+            }
+        }
+    }
+    return crc;
+}
+
+bool isNumber(char *res, int len)
+{
+    for (int i = 0; i < len; i++)
+    {
+        if (((res[i] < '0') || (res[i] > '9')) && (res[i] != '.' && res[i] != 0))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+int findCharInArrayRev(char array[], char c, int len)
+{
+    for (int i = len - 1; i >= 0; i--)
+    {
+        if (array[i] == c)
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+long getValue(char *buffer, int maxlen, char startchar, char endchar)
+{
+    int s = findCharInArrayRev(buffer, startchar, maxlen - 2);
+    int l = findCharInArrayRev(buffer, endchar, maxlen - 2) - s - 1;
+
+    char res[16];
+    memset(res, 0, sizeof(res));
+
+    if (strncpy(res, buffer + s + 1, l))
+    {
+        if (endchar == '*')
+        {
+            if (isNumber(res, l))
+                return (1000 * atof(res));
+        }
+        else if (endchar == ')')
+        {
+            if (isNumber(res, l))
+                return atof(res);
+        }
+    }
+
+    return 0;
+}
+
+/**
+ *  Decodes the telegram PER line. Not the complete message. 
+ */
+bool decodeTelegram(char* telegram,int len)
+{
+    int startChar = findCharInArrayRev(telegram, '/', len);
+    int endChar = findCharInArrayRev(telegram, '!', len);
+    bool validCRCFound = false;
+
+#ifdef DEBUG
+    for (int cnt = 0; cnt < len; cnt++)
+    {
+        Serial.print(telegram[cnt]);
+    }
+    Serial.print("\n");
+#endif
+    unsigned int currentCRC = 0;
+
+    if (startChar >= 0)
+    {
+        // * Start found. Reset CRC calculation
+        currentCRC = crc16(0x0000, (unsigned char *)telegram + startChar, len - startChar);
+    }
+    else if (endChar >= 0)
+    {
+        // * Add to crc calc
+        currentCRC = crc16(currentCRC, (unsigned char *)telegram + endChar, 1);
+
+        char messageCRC[5];
+        strncpy(messageCRC, telegram + endChar + 1, 4);
+
+        messageCRC[4] = 0; // * Thanks to HarmOtten (issue 5)
+        validCRCFound = (strtol(messageCRC, NULL, 16) == currentCRC);
+
+#ifdef DEBUG
+        if (validCRCFound)
+            Serial.println(F("CRC Valid!"));
+        else
+            Serial.println(F("CRC Invalid!"));
+#endif
+        currentCRC = 0;
+    }
+    else
+    {
+        currentCRC = crc16(currentCRC, (unsigned char *)telegram, len);
+    }
+
+    // Loops throug all the telegramObjects to find the code in the telegram line
+    // If it finds the code the value will be stored in the object so it can later be send to the mqtt broker
+    for (int i = 0; i < NUMBER_OF_READOUTS; i++)
+    {
+        if (strncmp(telegram, telegramObjects[i].code, strlen(telegramObjects[i].code)) == 0)
+        {
+            long newValue = getValue(telegram, len, telegramObjects[i].startChar, telegramObjects[i].endChar);
+            if (newValue != telegramObjects[i].value)
+            {
+                telegramObjects[i].value = newValue;
+                telegramObjects[i].sendData = true;
+            }
+            break;
+
+#ifdef DEBUG
+            Serial.println((String) "Found a Telegram object: " + telegramObjects[i].name + " value: " + telegramObjects[i].value);
+#endif
+        }
+    }
+
+    return validCRCFound;
+}
+
+bool readP1Serial()
+{
+    if (Serial2.available())
+    {
+#ifdef DEBUG
+        Serial.println("Serial2 is available");
+        Serial.println("Memset telegram");
+#endif
+        memset(telegram, 0, sizeof(telegram));
+        while (Serial2.available())
+        {
+            // Reads the telegram untill it finds a return character
+            // That is after each line in the telegram
+            int len = Serial2.readBytesUntil('\n', telegram, P1_MAXLINELENGTH);
+
+            telegram[len] = '\n';
+            telegram[len + 1] = 0;
+
+            bool result = decodeTelegram(telegram,len + 1);
+            // When the CRC is check which is also the end of the telegram
+            // if valid decode return true
+            if (result)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
 }
